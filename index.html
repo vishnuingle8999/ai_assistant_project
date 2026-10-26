@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Voice AI Navigation Assistant</title>
+    <style>
+        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+        body { margin: 0; background: #000; color: #fff; font-family: monospace, sans-serif; overflow: hidden; height: 100vh; width: 100vw; }
+        video { width: 100%; height: 100vh; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; opacity: 0.65; }
+
+        #touch-surface { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; padding: 16px; }
+
+        .hud-box { background: rgba(10, 15, 30, 0.88); padding: 16px; border-radius: 8px; border-left: 5px solid #00aaff; }
+        #nav-status { font-size: 20px; font-weight: bold; color: #38bdf8; margin-bottom: 6px; }
+        #telemetry { font-size: 13px; color: #cbd5e1; line-height: 1.5; }
+
+        #center-prompt { align-self: center; background: rgba(0, 102, 255, 0.9); padding: 24px; border-radius: 12px; font-size: 22px; font-weight: bold; text-align: center; width: 90%; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6); }
+        .listening-active { background: rgba(220, 38, 38, 0.95) !important; }
+
+        #vision-box { border-left-color: #00ff66; text-align: center; }
+        #vision-status { font-size: 20px; font-weight: bold; color: #00ff66; }
+        .urgent-text { color: #ff3333 !important; }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay playsinline></video>
+
+    <div id="touch-surface">
+        <!-- Top GPS & Voice Command Status -->
+        <div class="hud-box">
+            <div id="nav-status">Tap anywhere to start system</div>
+            <div id="telemetry">
+                📍 GPS: <span id="gps-info">Waiting...</span><br>
+                ⚡ Vision Latency: <span id="latency-info">-- ms</span>
+            </div>
+        </div>
+
+        <!-- Center Tactile Status Indicator -->
+        <div id="center-prompt">TAP ANYWHERE TO START</div>
+
+        <!-- Bottom Obstacle Warning Status -->
+        <div class="hud-box" id="vision-box">
+            <div id="vision-status">Vision Standby</div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const touchSurface = document.getElementById('touch-surface');
+        const navStatus = document.getElementById('nav-status');
+        const gpsInfo = document.getElementById('gps-info');
+        const latencyInfo = document.getElementById('latency-info');
+        const centerPrompt = document.getElementById('center-prompt');
+        const visionStatus = document.getElementById('vision-status');
+
+        // Configure offscreen canvas once at startup
+        const canvas = document.createElement('canvas');
+        canvas.width = 320;
+        canvas.height = 240;
+        const ctx = canvas.getContext('2d');
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        let systemStarted = false;
+        let isListening = false;
+        let capturedText = "";
+        let userLat = 19.0728;
+        let userLon = 72.8826;
+
+        // Setup Speech Recognition
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = SR ? new SR() : null;
+
+        if (recognition) {
+            recognition.lang = 'en-IN';
+            recognition.continuous = false;
+            recognition.interimResults = true;
+        }
+
+        // Echo-safe speech synthesis
+        function speak(text, priority) {
+            if (isListening || !text) return;
+
+            if (priority) {
+                window.speechSynthesis.cancel();
+            } else if (window.speechSynthesis.speaking) {
+                return;
+            }
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.15;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // 1st tap starts system; subsequent taps trigger voice command
+        touchSurface.addEventListener('click', () => {
+            if (!systemStarted) {
+                startSystem();
+            } else {
+                startVoiceListening();
+            }
+        });
+
+        async function startSystem() {
+            try {
+                video.srcObject = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment", width: { ideal: 320 }, height: { ideal: 240 } }
+                });
+                systemStarted = true;
+                centerPrompt.innerText = "TAP SCREEN & SPEAK\n(Home, Office, Repeat, Stop)";
+                navStatus.innerText = "Voice Ready: Tap screen to speak";
+
+                speak("System active. Tap screen and speak your destination.", true);
+                initGPS();
+                await sleep(1000);
+                visionLoop();
+            } catch (err) {
+                navStatus.innerText = "Camera permission denied. Check HTTPS/Ngrok.";
+            }
+        }
+
+        function startVoiceListening() {
+            if (!recognition) {
+                speak("Voice recognition not supported on this browser.", true);
+                return;
+            }
+
+            if (isListening) return;
+
+            // Stop all speaker audio immediately so mic doesn't hear an echo
+            window.speechSynthesis.cancel();
+            capturedText = "";
+            isListening = true;
+
+            if (navigator.vibrate) {
+                navigator.vibrate(60);
+            }
+
+            centerPrompt.innerText = "🎙️ LISTENING NOW...\nSpeak clearly";
+            centerPrompt.classList.add("listening-active");
+            navStatus.innerText = "Listening...";
+
+            try {
+                recognition.start();
+            } catch (err) {
+                recognition.stop();
+                isListening = false;
+            }
+        }
+
+        if (recognition) {
+            recognition.onresult = (e) => {
+                let transcript = "";
+                for (let i = e.resultIndex; i < e.results.length; i++) {
+                    transcript += e.results[i][0].transcript;
+                }
+                capturedText = transcript.trim();
+                navStatus.innerText = 'Hearing: "' + capturedText + '"';
+            };
+
+            recognition.onerror = (e) => {
+                isListening = false;
+                centerPrompt.classList.remove("listening-active");
+                centerPrompt.innerText = "TAP SCREEN & SPEAK";
+
+                if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+                    navStatus.innerText = "Mic Blocked! Allow Microphone in browser settings.";
+                    speak("Microphone permission is blocked.", true);
+                } else if (e.error === "no-speech") {
+                    navStatus.innerText = "No speech heard. Tap and speak right away.";
+                    speak("No speech heard. Tap and speak.", true);
+                } else {
+                    navStatus.innerText = "Mic error: " + e.error + ". Tap to try again.";
+                }
+            };
+
+            recognition.onend = async () => {
+                isListening = false;
+                centerPrompt.classList.remove("listening-active");
+                centerPrompt.innerText = "TAP SCREEN & SPEAK";
+
+                if (!capturedText) return;
+
+                navStatus.innerText = 'Command: "' + capturedText + '"';
+                try {
+                    const res = await fetch('/voice-command', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ lat: userLat, lon: userLon, command: capturedText })
+                    });
+                    const data = await res.json();
+                    if (data && data.speech) {
+                        navStatus.innerText = data.speech;
+                        speak(data.speech, true);
+                    }
+                } catch (err) {
+                    speak("Could not connect to navigation server.", true);
+                }
+            };
+        }
+
+        function initGPS() {
+            if (!navigator.geolocation) return;
+
+            navigator.geolocation.watchPosition(async (pos) => {
+                userLat = pos.coords.latitude;
+                userLon = pos.coords.longitude;
+                const acc = Math.round(pos.coords.accuracy);
+                gpsInfo.innerText = userLat.toFixed(4) + ", " + userLon.toFixed(4) + " (±" + acc + "m)";
+
+                try {
+                    const res = await fetch('/update-gps', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ lat: userLat, lon: userLon, accuracy: acc })
+                    });
+                    const data = await res.json();
+
+                    if (data && data.distance_to_turn !== undefined) {
+                        gpsInfo.innerText += " | Turn: " + data.distance_to_turn + "m";
+                    }
+                    if (data && data.speech) {
+                        navStatus.innerText = data.speech;
+                        speak(data.speech, true);
+                    }
+                } catch (err) {
+                    // Ignore transient network hiccups on GPS poll
+                }
+            }, () => {
+                gpsInfo.innerText = "Signal weak (Using default coords)";
+            }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
+        }
+
+        // Low-Latency Vision Loop
+        async function visionLoop() {
+            while (true) {
+                if (isListening || video.readyState < 2 || video.videoWidth === 0) {
+                    await sleep(120);
+                    continue;
+                }
+
+                const t0 = performance.now();
+                ctx.drawImage(video, 0, 0, 320, 240);
+
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.25));
+                if (!blob) {
+                    await sleep(100);
+                    continue;
+                }
+
+                const form = new FormData();
+                form.append('image_file', blob, 'f.jpg');
+
+                try {
+                    const res = await fetch('/analyze-vision', { method: 'POST', body: form });
+                    if (!res.ok) {
+                        throw new Error("Server error");
+                    }
+
+                    const data = await res.json();
+                    const dt = Math.round(performance.now() - t0);
+                    latencyInfo.innerText = dt + " ms";
+
+                    if (data && Array.isArray(data.warnings) && data.warnings.length > 0) {
+                        const alertMsg = data.warnings[0];
+                        visionStatus.innerText = alertMsg;
+                        visionStatus.classList.add("urgent-text");
+                        speak(alertMsg, alertMsg.indexOf("Stop!") === 0);
+                    } else {
+                        visionStatus.innerText = "Path Clear";
+                        visionStatus.classList.remove("urgent-text");
+                    }
+                } catch (err) {
+                    visionStatus.innerText = "Reconnecting...";
+                }
+
+                await sleep(100);
+            }
+        }
+    </script>
+</body>
+</html>
