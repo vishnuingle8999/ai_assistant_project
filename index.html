@@ -1,64 +1,173 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
     <title>Voice AI Navigation Assistant</title>
+
     <style>
-        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
-        body { margin: 0; background: #000; color: #fff; font-family: monospace, sans-serif; overflow: hidden; height: 100vh; width: 100vw; }
-        video { width: 100%; height: 100vh; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; opacity: 0.65; }
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
 
-        #touch-surface { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; display: flex; flex-direction: column; justify-content: space-between; padding: 16px; }
+        body {
+            margin: 0;
+            background: #000;
+            color: #fff;
+            font-family: monospace, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
 
-        .hud-box { background: rgba(10, 15, 30, 0.88); padding: 16px; border-radius: 8px; border-left: 5px solid #00aaff; }
-        #nav-status { font-size: 20px; font-weight: bold; color: #38bdf8; margin-bottom: 6px; }
-        #telemetry { font-size: 13px; color: #cbd5e1; line-height: 1.5; }
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            opacity: 0.75;
+        }
 
-        #center-prompt { align-self: center; background: rgba(0, 102, 255, 0.9); padding: 24px; border-radius: 12px; font-size: 22px; font-weight: bold; text-align: center; width: 90%; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6); }
-        .listening-active { background: rgba(220, 38, 38, 0.95) !important; }
+        #box-overlay {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+        }
 
-        #vision-box { border-left-color: #00ff66; text-align: center; }
-        #vision-status { font-size: 20px; font-weight: bold; color: #00ff66; }
-        .urgent-text { color: #ff3333 !important; }
+        #touch-surface {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 16px;
+        }
+
+        .hud-box {
+            background: rgba(10, 15, 30, 0.88);
+            padding: 14px;
+            border-radius: 8px;
+            border-left: 5px solid #00aaff;
+        }
+
+        #nav-status {
+            font-size: 18px;
+            font-weight: bold;
+            color: #38bdf8;
+            margin-bottom: 8px;
+        }
+
+        #telemetry {
+            font-size: 13px;
+            color: #cbd5e1;
+            line-height: 1.6;
+        }
+
+        #language-select {
+            display: block;
+            margin-top: 8px;
+            padding: 8px;
+            font-size: 16px;
+            color: #fff;
+            background: #172033;
+            border: 1px solid #38bdf8;
+            border-radius: 5px;
+        }
+
+        #center-prompt {
+            align-self: center;
+            background: rgba(0, 102, 255, 0.9);
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            width: 90%;
+            white-space: pre-line;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+        }
+
+        .listening-active {
+            background: rgba(220, 38, 38, 0.95) !important;
+        }
+
+        #vision-box {
+            border-left-color: #00ff66;
+            text-align: center;
+        }
+
+        #vision-status {
+            font-size: 18px;
+            font-weight: bold;
+            color: #00ff66;
+            overflow-wrap: anywhere;
+        }
+
+        .urgent-text {
+            color: #ff3333 !important;
+        }
     </style>
 </head>
+
 <body>
     <video id="video" autoplay playsinline></video>
+    <canvas id="box-overlay"></canvas>
 
     <div id="touch-surface">
-        <!-- Top GPS & Voice Command Status -->
         <div class="hud-box">
             <div id="nav-status">Tap anywhere to start system</div>
+
             <div id="telemetry">
-                📍 GPS: <span id="gps-info">Waiting...</span><br>
-                ⚡ Vision Latency: <span id="latency-info">-- ms</span>
+                GPS: <span id="gps-info">Waiting...</span><br>
+                Vision latency: <span id="latency-info">-- ms</span>
             </div>
+
+            <label for="language-select">Voice language:</label>
+            <select id="language-select">
+                <option value="en-IN">English</option>
+                <option value="hi-IN">Hindi</option>
+                <option value="mr-IN">Marathi</option>
+            </select>
         </div>
 
-        <!-- Center Tactile Status Indicator -->
         <div id="center-prompt">TAP ANYWHERE TO START</div>
 
-        <!-- Bottom Obstacle Warning Status -->
         <div class="hud-box" id="vision-box">
             <div id="vision-status">Vision Standby</div>
         </div>
     </div>
 
     <script>
-        const video = document.getElementById('video');
-        const touchSurface = document.getElementById('touch-surface');
-        const navStatus = document.getElementById('nav-status');
-        const gpsInfo = document.getElementById('gps-info');
-        const latencyInfo = document.getElementById('latency-info');
-        const centerPrompt = document.getElementById('center-prompt');
-        const visionStatus = document.getElementById('vision-status');
+        const video = document.getElementById("video");
+        const touchSurface = document.getElementById("touch-surface");
+        const navStatus = document.getElementById("nav-status");
+        const gpsInfo = document.getElementById("gps-info");
+        const latencyInfo = document.getElementById("latency-info");
+        const centerPrompt = document.getElementById("center-prompt");
+        const visionStatus = document.getElementById("vision-status");
+        const languageSelect = document.getElementById("language-select");
 
-        // Configure offscreen canvas once at startup
-        const canvas = document.createElement('canvas');
-        canvas.width = 320;
-        canvas.height = 240;
-        const ctx = canvas.getContext('2d');
+        const boxOverlay = document.getElementById("box-overlay");
+        const boxCtx = boxOverlay.getContext("2d");
+
+        // Offscreen canvas used to send camera frames to the server.
+        const captureCanvas = document.createElement("canvas");
+        captureCanvas.width = 320;
+        captureCanvas.height = 240;
+        const captureCtx = captureCanvas.getContext("2d");
 
         function sleep(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
@@ -67,22 +176,246 @@
         let systemStarted = false;
         let isListening = false;
         let capturedText = "";
-        let userLat = 19.0728;
-        let userLon = 72.8826;
 
-        // Setup Speech Recognition
-        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let userLat = null;
+        let userLon = null;
+
+        const SR = window.SpeechRecognition ||
+                   window.webkitSpeechRecognition;
+
         const recognition = SR ? new SR() : null;
 
         if (recognition) {
-            recognition.lang = 'en-IN';
+            recognition.lang = languageSelect.value;
             recognition.continuous = false;
             recognition.interimResults = true;
         }
 
-        // Echo-safe speech synthesis
-        function speak(text, priority) {
-            if (isListening || !text) return;
+        // Keep overlay coordinates aligned with the cover-fitted video.
+        function resizeOverlay() {
+            boxOverlay.width = window.innerWidth;
+            boxOverlay.height = window.innerHeight;
+            drawBoxes([]);
+        }
+
+        window.addEventListener("resize", resizeOverlay);
+        resizeOverlay();
+
+        function drawBoxes(boxes) {
+            boxCtx.clearRect(
+                0, 0, boxOverlay.width, boxOverlay.height
+            );
+
+            if (
+                !video.videoWidth ||
+                !video.videoHeight ||
+                !Array.isArray(boxes)
+            ) {
+                return;
+            }
+
+            const canvasWidth = boxOverlay.width;
+            const canvasHeight = boxOverlay.height;
+
+            const scale = Math.max(
+                canvasWidth / video.videoWidth,
+                canvasHeight / video.videoHeight
+            );
+
+            const offsetX =
+                (canvasWidth - video.videoWidth * scale) / 2;
+
+            const offsetY =
+                (canvasHeight - video.videoHeight * scale) / 2;
+
+            boxCtx.font = "bold 15px sans-serif";
+            boxCtx.lineWidth = 3;
+
+            for (const box of boxes) {
+                const x =
+                    box.x1 * video.videoWidth * scale + offsetX;
+                const y =
+                    box.y1 * video.videoHeight * scale + offsetY;
+                const w =
+                    (box.x2 - box.x1) * video.videoWidth * scale;
+                const h =
+                    (box.y2 - box.y1) * video.videoHeight * scale;
+
+                const color = box.is_hazard
+                    ? "#ff3333"
+                    : "#00ff66";
+
+                boxCtx.strokeStyle = color;
+                boxCtx.strokeRect(x, y, w, h);
+
+                const label = box.is_hazard
+                    ? "HAZARD: " + box.name
+                    : box.name;
+
+                const labelY = Math.max(20, y);
+
+                boxCtx.fillStyle = color;
+                boxCtx.fillRect(
+                    x,
+                    labelY - 20,
+                    boxCtx.measureText(label).width + 10,
+                    21
+                );
+
+                boxCtx.fillStyle = "#000";
+                boxCtx.fillText(label, x + 5, labelY - 5);
+            }
+        }
+
+        // Translate common obstacle labels and directions.
+        // Unknown model labels remain in English.
+        const objectWords = {
+            "hi-IN": {
+                person: "व्यक्ति",
+                car: "कार",
+                truck: "ट्रक",
+                bus: "बस",
+                bicycle: "साइकिल",
+                motorcycle: "मोटरसाइकिल",
+                chair: "कुर्सी",
+                stairs: "सीढ़ियाँ",
+                stair: "सीढ़ियाँ",
+                pothole: "गड्ढा",
+                dog: "कुत्ता",
+                cat: "बिल्ली",
+                door: "दरवाज़ा",
+                bench: "बेंच",
+                bottle: "बोतल"
+            },
+            "mr-IN": {
+                person: "व्यक्ती",
+                car: "कार",
+                truck: "ट्रक",
+                bus: "बस",
+                bicycle: "सायकल",
+                motorcycle: "मोटारसायकल",
+                chair: "खुर्ची",
+                stairs: "पायऱ्या",
+                stair: "पायरी",
+                pothole: "खड्डा",
+                dog: "कुत्रा",
+                cat: "मांजर",
+                door: "दरवाजा",
+                bench: "बाक",
+                bottle: "बाटली"
+            }
+        };
+
+        function translateAlert(message, language) {
+            if (language === "en-IN") {
+                return message;
+            }
+
+            const words = message.split(" ");
+            const position = words.slice(-2).join(" ");
+
+            let objectName = "";
+            let kind = "normal";
+
+            if (message.startsWith("Caution! ")) {
+                objectName = message
+                    .slice("Caution! ".length)
+                    .replace(/ on left$| on right$| ahead$/, "")
+                    .trim();
+                kind = "caution";
+            } else if (
+                message.startsWith("Stop! ") &&
+                message.includes(" approaching ")
+            ) {
+                objectName = message
+                    .slice("Stop! ".length)
+                    .split(" approaching ")[0];
+                kind = "approachingUrgent";
+            } else if (message.startsWith("Stop! ")) {
+                objectName = message
+                    .slice("Stop! ".length)
+                    .replace(/ on left$| on right$| ahead$/, "")
+                    .trim();
+                kind = "urgent";
+            } else if (message.startsWith("Approaching ")) {
+                objectName = message
+                    .slice("Approaching ".length)
+                    .replace(/ on left$| on right$| ahead$/, "")
+                    .trim();
+                kind = "approaching";
+            } else {
+                objectName = message
+                    .replace(/ on left$| on right$| ahead$/, "")
+                    .trim();
+            }
+
+            const translations = objectWords[language] || {};
+            const translatedName =
+                translations[objectName.toLowerCase()] || objectName;
+
+            const directionMap = {
+                "hi-IN": {
+                    "on left": "बाईं ओर",
+                    "on right": "दाईं ओर",
+                    "ahead": "आगे"
+                },
+                "mr-IN": {
+                    "on left": "डाव्या बाजूला",
+                    "on right": "उजव्या बाजूला",
+                    "ahead": "समोर"
+                }
+            };
+
+            const directions = directionMap[language];
+            const translatedPosition =
+                directions[position] ||
+                (message.endsWith("on left")
+                    ? directions["on left"]
+                    : message.endsWith("on right")
+                    ? directions["on right"]
+                    : directions["ahead"]);
+
+            if (language === "hi-IN") {
+                if (kind === "caution") {
+                    return `सावधान! ${translatedName}, ${translatedPosition}`;
+                }
+                if (kind === "approachingUrgent") {
+                    return `रुकिए! ${translatedName} पास आ रहा है, ${translatedPosition}`;
+                }
+                if (kind === "urgent") {
+                    return `रुकिए! ${translatedName}, ${translatedPosition}`;
+                }
+                if (kind === "approaching") {
+                    return `${translatedName} पास आ रहा है, ${translatedPosition}`;
+                }
+                return `सावधान! ${translatedName}, ${translatedPosition}`;
+            }
+
+            if (kind === "caution") {
+                return `सावधान! ${translatedName}, ${translatedPosition}`;
+            }
+            if (kind === "approachingUrgent") {
+                return `थांबा! ${translatedName} जवळ येत आहे, ${translatedPosition}`;
+            }
+            if (kind === "urgent") {
+                return `थांबा! ${translatedName}, ${translatedPosition}`;
+            }
+            if (kind === "approaching") {
+                return `${translatedName} जवळ येत आहे, ${translatedPosition}`;
+            }
+
+            return `सावधान! ${translatedName}, ${translatedPosition}`;
+        }
+
+        // Speech output uses the selected language.
+        function speak(text, priority = false, translate = false) {
+            if (isListening || !text) {
+                return;
+            }
+
+            if (!("speechSynthesis" in window)) {
+                return;
+            }
 
             if (priority) {
                 window.speechSynthesis.cancel();
@@ -90,13 +423,22 @@
                 return;
             }
 
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 1.15;
+            const language = languageSelect.value;
+            const spokenText = translate
+                ? translateAlert(text, language)
+                : text;
+
+            const utterance =
+                new SpeechSynthesisUtterance(spokenText);
+
+            utterance.lang = language;
+            utterance.rate = 1.0;
+
             window.speechSynthesis.speak(utterance);
         }
 
-        // 1st tap starts system; subsequent taps trigger voice command
-        touchSurface.addEventListener('click', () => {
+        // Taps start the system or activate voice-command listening.
+        touchSurface.addEventListener("click", () => {
             if (!systemStarted) {
                 startSystem();
             } else {
@@ -104,76 +446,129 @@
             }
         });
 
+        // Avoid activating voice commands when selecting a language.
+        languageSelect.addEventListener("click", event => {
+            event.stopPropagation();
+        });
+
+        languageSelect.addEventListener("change", () => {
+            if (recognition) {
+                recognition.lang = languageSelect.value;
+            }
+
+            speak("Voice language selected.", true);
+        });
+
         async function startSystem() {
             try {
-                video.srcObject = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment", width: { ideal: 320 }, height: { ideal: 240 } }
-                });
-                systemStarted = true;
-                centerPrompt.innerText = "TAP SCREEN & SPEAK\n(Home, Office, Repeat, Stop)";
-                navStatus.innerText = "Voice Ready: Tap screen to speak";
+                if (!navigator.mediaDevices ||
+                    !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("Camera API unavailable");
+                }
 
-                speak("System active. Tap screen and speak your destination.", true);
+                video.srcObject =
+                    await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: "environment",
+                            width: { ideal: 320 },
+                            height: { ideal: 240 }
+                        }
+                    });
+
+                await video.play();
+
+                systemStarted = true;
+
+                centerPrompt.innerText =
+                    "TAP SCREEN & SPEAK\n(Home, Office, Repeat, Stop)";
+
+                navStatus.innerText =
+                    "Voice ready: tap screen to speak";
+
+                speak(
+                    "System active. Tap the screen and speak your destination.",
+                    true
+                );
+
                 initGPS();
+
                 await sleep(1000);
                 visionLoop();
             } catch (err) {
-                navStatus.innerText = "Camera permission denied. Check HTTPS/Ngrok.";
+                console.error(err);
+                navStatus.innerText =
+                    "Camera unavailable. Allow camera permission and use localhost or HTTPS.";
             }
         }
 
         function startVoiceListening() {
             if (!recognition) {
-                speak("Voice recognition not supported on this browser.", true);
+                speak(
+                    "Voice recognition is not supported in this browser.",
+                    true
+                );
                 return;
             }
 
-            if (isListening) return;
+            if (isListening) {
+                return;
+            }
 
-            // Stop all speaker audio immediately so mic doesn't hear an echo
             window.speechSynthesis.cancel();
+
             capturedText = "";
             isListening = true;
+            recognition.lang = languageSelect.value;
 
             if (navigator.vibrate) {
                 navigator.vibrate(60);
             }
 
-            centerPrompt.innerText = "🎙️ LISTENING NOW...\nSpeak clearly";
+            centerPrompt.innerText = "LISTENING NOW...\nSpeak clearly";
             centerPrompt.classList.add("listening-active");
             navStatus.innerText = "Listening...";
 
             try {
                 recognition.start();
             } catch (err) {
-                recognition.stop();
+                console.error(err);
                 isListening = false;
             }
         }
 
         if (recognition) {
-            recognition.onresult = (e) => {
+            recognition.onresult = event => {
                 let transcript = "";
-                for (let i = e.resultIndex; i < e.results.length; i++) {
-                    transcript += e.results[i][0].transcript;
+
+                for (
+                    let i = event.resultIndex;
+                    i < event.results.length;
+                    i++
+                ) {
+                    transcript += event.results[i][0].transcript;
                 }
+
                 capturedText = transcript.trim();
-                navStatus.innerText = 'Hearing: "' + capturedText + '"';
+                navStatus.innerText = `Hearing: "${capturedText}"`;
             };
 
-            recognition.onerror = (e) => {
+            recognition.onerror = event => {
                 isListening = false;
                 centerPrompt.classList.remove("listening-active");
                 centerPrompt.innerText = "TAP SCREEN & SPEAK";
 
-                if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-                    navStatus.innerText = "Mic Blocked! Allow Microphone in browser settings.";
-                    speak("Microphone permission is blocked.", true);
-                } else if (e.error === "no-speech") {
-                    navStatus.innerText = "No speech heard. Tap and speak right away.";
-                    speak("No speech heard. Tap and speak.", true);
+                if (
+                    event.error === "not-allowed" ||
+                    event.error === "service-not-allowed"
+                ) {
+                    navStatus.innerText =
+                        "Microphone blocked. Allow microphone permission.";
+                } else if (event.error === "no-speech") {
+                    navStatus.innerText =
+                        "No speech heard. Tap and speak again.";
                 } else {
-                    navStatus.innerText = "Mic error: " + e.error + ". Tap to try again.";
+                    navStatus.innerText =
+                        "Microphone error: " + event.error;
                 }
             };
 
@@ -182,102 +577,196 @@
                 centerPrompt.classList.remove("listening-active");
                 centerPrompt.innerText = "TAP SCREEN & SPEAK";
 
-                if (!capturedText) return;
+                if (!capturedText) {
+                    return;
+                }
 
-                navStatus.innerText = 'Command: "' + capturedText + '"';
+                if (userLat === null || userLon === null) {
+                    navStatus.innerText =
+                        "Waiting for your GPS location.";
+                    speak(
+                        "Waiting for your GPS location.",
+                        true
+                    );
+                    return;
+                }
+
+                navStatus.innerText = `Command: "${capturedText}"`;
+
                 try {
-                    const res = await fetch('/voice-command', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ lat: userLat, lon: userLon, command: capturedText })
+                    const response = await fetch("/voice-command", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            lat: userLat,
+                            lon: userLon,
+                            command: capturedText
+                        })
                     });
-                    const data = await res.json();
+
+                    if (!response.ok) {
+                        throw new Error("Navigation server error");
+                    }
+
+                    const data = await response.json();
+
                     if (data && data.speech) {
                         navStatus.innerText = data.speech;
                         speak(data.speech, true);
                     }
                 } catch (err) {
-                    speak("Could not connect to navigation server.", true);
+                    console.error(err);
+                    speak(
+                        "Could not connect to the navigation server.",
+                        true
+                    );
                 }
             };
         }
 
         function initGPS() {
-            if (!navigator.geolocation) return;
+            if (!navigator.geolocation) {
+                gpsInfo.innerText = "Geolocation unavailable";
+                return;
+            }
 
-            navigator.geolocation.watchPosition(async (pos) => {
-                userLat = pos.coords.latitude;
-                userLon = pos.coords.longitude;
-                const acc = Math.round(pos.coords.accuracy);
-                gpsInfo.innerText = userLat.toFixed(4) + ", " + userLon.toFixed(4) + " (±" + acc + "m)";
+            navigator.geolocation.watchPosition(
+                async position => {
+                    userLat = position.coords.latitude;
+                    userLon = position.coords.longitude;
 
-                try {
-                    const res = await fetch('/update-gps', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ lat: userLat, lon: userLon, accuracy: acc })
-                    });
-                    const data = await res.json();
+                    const accuracy =
+                        Math.round(position.coords.accuracy);
 
-                    if (data && data.distance_to_turn !== undefined) {
-                        gpsInfo.innerText += " | Turn: " + data.distance_to_turn + "m";
+                    gpsInfo.innerText =
+                        `${userLat.toFixed(5)}, ${userLon.toFixed(5)} (±${accuracy}m)`;
+
+                    try {
+                        const response = await fetch("/update-gps", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                lat: userLat,
+                                lon: userLon,
+                                accuracy: accuracy
+                            })
+                        });
+
+                        if (!response.ok) {
+                            throw new Error("GPS update failed");
+                        }
+
+                        const data = await response.json();
+
+                        if (data.distance_to_turn !== undefined) {
+                            gpsInfo.innerText +=
+                                ` | Turn: ${data.distance_to_turn}m`;
+                        }
+
+                        if (data && data.speech) {
+                            navStatus.innerText = data.speech;
+                            speak(data.speech, true);
+                        }
+                    } catch (err) {
+                        console.error("GPS update:", err);
                     }
-                    if (data && data.speech) {
-                        navStatus.innerText = data.speech;
-                        speak(data.speech, true);
-                    }
-                } catch (err) {
-                    // Ignore transient network hiccups on GPS poll
+                },
+                error => {
+                    gpsInfo.innerText =
+                        "GPS unavailable: " + error.message;
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 1000,
+                    timeout: 10000
                 }
-            }, () => {
-                gpsInfo.innerText = "Signal weak (Using default coords)";
-            }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
+            );
         }
 
-        // Low-Latency Vision Loop
+        // Continuously send frames to the vision endpoint.
         async function visionLoop() {
-            while (true) {
-                if (isListening || video.readyState < 2 || video.videoWidth === 0) {
+            while (systemStarted) {
+                if (
+                    isListening ||
+                    video.readyState < 2 ||
+                    video.videoWidth === 0
+                ) {
                     await sleep(120);
                     continue;
                 }
 
-                const t0 = performance.now();
-                ctx.drawImage(video, 0, 0, 320, 240);
+                const startTime = performance.now();
 
-                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.25));
+                captureCtx.drawImage(
+                    video, 0, 0, 320, 240
+                );
+
+                const blob = await new Promise(resolve => {
+                    captureCanvas.toBlob(
+                        resolve, "image/jpeg", 0.45
+                    );
+                });
+
                 if (!blob) {
                     await sleep(100);
                     continue;
                 }
 
                 const form = new FormData();
-                form.append('image_file', blob, 'f.jpg');
+                form.append("image_file", blob, "frame.jpg");
 
                 try {
-                    const res = await fetch('/analyze-vision', { method: 'POST', body: form });
-                    if (!res.ok) {
-                        throw new Error("Server error");
+                    const response = await fetch("/analyze-vision", {
+                        method: "POST",
+                        body: form
+                    });
+
+                    if (!response.ok) {
+                        throw new Error("Vision server error");
                     }
 
-                    const data = await res.json();
-                    const dt = Math.round(performance.now() - t0);
-                    latencyInfo.innerText = dt + " ms";
+                    const data = await response.json();
 
-                    if (data && Array.isArray(data.warnings) && data.warnings.length > 0) {
-                        const alertMsg = data.warnings[0];
-                        visionStatus.innerText = alertMsg;
+                    latencyInfo.innerText =
+                        Math.round(performance.now() - startTime) +
+                        " ms";
+
+                    // Draw boxes returned by the YOLO models.
+                    drawBoxes(data.boxes || []);
+
+                    if (
+                        Array.isArray(data.warnings) &&
+                        data.warnings.length > 0
+                    ) {
+                        const alertMessage = data.warnings[0];
+
+                        visionStatus.innerText = translateAlert(
+                            alertMessage,
+                            languageSelect.value
+                        );
+
                         visionStatus.classList.add("urgent-text");
-                        speak(alertMsg, alertMsg.indexOf("Stop!") === 0);
+
+                        const urgent =
+                            alertMessage.startsWith("Stop!") ||
+                            alertMessage.startsWith("Caution!");
+
+                        speak(alertMessage, urgent, true);
                     } else {
                         visionStatus.innerText = "Path Clear";
                         visionStatus.classList.remove("urgent-text");
                     }
                 } catch (err) {
-                    visionStatus.innerText = "Reconnecting...";
+                    console.error("Vision error:", err);
+                    visionStatus.innerText =
+                        "Vision reconnecting...";
                 }
 
-                await sleep(100);
+                await sleep(150);
             }
         }
     </script>
